@@ -1,8 +1,8 @@
 /*
-posix_ipc - A Python module for accessing POSIX 1003.1b-1993 semaphores,
-            shared memory and message queues.
+posix_ipc - A Python module for accessing POSIX 1003.1b-1993 (2020 Alex + Emad) message queues.
 
 Copyright (c) 2018, Philip Semanchuk
+Copyright 2020 Alex + Emad
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -48,12 +48,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "probe_results.h"
 
-// For semaphore stuff
-#include <semaphore.h>
-
-// For shared memory stuff
-#include <sys/stat.h>
-#include <sys/mman.h>
 
 #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
 // For msg queues
@@ -94,12 +88,12 @@ typedef struct {
 // increase this gently or change that code to use malloc().
 #define MAX_SAFE_NAME_LENGTH  14
 
-// POSIX_IPC_SHM_NO_VALUE is the placeholder value for SharedMemory file descriptors that are
-// uninitialized, closed, or otherwise not useful. It cannot have a value other than -1 because
-// it's used interchangeably with the shm_open() failure return code (which is -1).
-// ref: http://pubs.opengroup.org/onlinepubs/009695399/functions/shm_open.html
-// ref: https://github.com/osvenskan/posix_ipc/issues/2
-#define POSIX_IPC_SHM_NO_VALUE         -1
+// // POSIX_IPC_SHM_NO_VALUE is the placeholder value for SharedMemory file descriptors that are
+// // uninitialized, closed, or otherwise not useful. It cannot have a value other than -1 because
+// // it's used interchangeably with the shm_open() failure return code (which is -1).
+// // ref: http://pubs.opengroup.org/onlinepubs/009695399/functions/shm_open.html
+// // ref: https://github.com/osvenskan/posix_ipc/issues/2
+// #define POSIX_IPC_SHM_NO_VALUE         -1
 
 // POSIX_IPC_MQ_NO_VALUE is the same concept as POSIX_IPC_SHM_NO_VALUE, but for message queues.
 // However, while POSIX_IPC_SHM_NO_VALUE is a necessity, this is just defensive programming.
@@ -374,297 +368,7 @@ mode_to_str(long mode, char *mode_str) {
 }
 
 
-static int test_semaphore_validity(Semaphore *p) {
-    // Returns 1 (true) if the Semaphore object refers to a valid
-    // semaphore, 0 (false) otherwise. In the latter case, it sets the
-    // Python exception info and the caller should immediately return NULL.
-    // The false condition should not arise unless the user of the module
-    // tries to use a Semaphore after it's been closed.
-    int valid = 1;
 
-    if (SEM_FAILED == p->pSemaphore) {
-        valid = 0;
-        PyErr_SetString(pExistentialException, "The semaphore has been closed");
-    }
-
-    return valid;
-}
-
-/*   =====  Semaphore implementation functions =====   */
-
-static PyObject *
-sem_str(Semaphore *self) {
-    return generic_str(self->name);
-}
-
-
-static PyObject *
-sem_repr(Semaphore *self) {
-    char mode[32];
-
-    mode_to_str(self->mode, mode);
-
-#if PY_MAJOR_VERSION > 2
-    return PyUnicode_FromFormat("posix_ipc.Semaphore(\"%s\", mode=%s)",
-                                self->name, mode);
-#else
-    return PyString_FromFormat("posix_ipc.Semaphore(\"%s\", mode=%s)",
-                                self->name, mode);
-#endif
-}
-
-
-static PyObject *
-my_sem_unlink(const char *name) {
-    DPRINTF("unlinking sem name %s\n", name);
-    if (-1 == sem_unlink(name)) {
-        switch (errno) {
-            case EACCES:
-                PyErr_SetString(pPermissionsException,
-                                "Denied permission to unlink this semaphore");
-            break;
-
-            case ENOENT:
-            case EINVAL:
-                PyErr_SetString(pExistentialException,
-                                "No semaphore exists with the specified name");
-            break;
-
-            case ENAMETOOLONG:
-                PyErr_SetString(PyExc_ValueError, "The name is too long");
-            break;
-
-            default:
-                PyErr_SetFromErrno(PyExc_OSError);
-            break;
-        }
-        goto error_return;
-    }
-
-    Py_RETURN_NONE;
-
-    error_return:
-    return NULL;
-}
-
-
-static void
-Semaphore_dealloc(Semaphore *self) {
-    /* Note -- I make no attempt to close the semaphore because that
-       kills access to the semaphore for every thread in this process,
-       which would make multi-threaded programming difficult.
-    */
-    DPRINTF("dealloc\n");
-    PyMem_Free(self->name);
-    self->name = NULL;
-
-    Py_TYPE(self)->tp_free((PyObject*)self);
-}
-
-
-static PyObject *
-Semaphore_new(PyTypeObject *type, PyObject *args, PyObject *kwlist) {
-    Semaphore *self;
-
-    self = (Semaphore *)type->tp_alloc(type, 0);
-
-    return (PyObject *)self;
-}
-
-
-static int
-Semaphore_init(Semaphore *self, PyObject *args, PyObject *keywords) {
-    NoneableName name;
-    char temp_name[MAX_SAFE_NAME_LENGTH + 1];
-    unsigned int initial_value = 0;
-    int flags = 0;
-    static char *keyword_list[ ] = {"name", "flags", "mode", "initial_value", NULL};
-
-    // First things first -- initialize the self struct. I use SEM_FAILED to represent
-    // an uninitialized pointer to a semaphore because at least one platform (OS X) uses
-    // file handles to represent semaphore handles, and they can be 0. See comments here --
-    // https://github.com/osvenskan/posix_ipc/issues/2
-    self->pSemaphore = SEM_FAILED;
-    self->name = NULL;
-    self->mode = 0600;
-
-    // Semaphore(name, [flags = 0, [mode = 0600, [initial_value = 0]]])
-
-    if (!PyArg_ParseTupleAndKeywords(args, keywords, "O&|iiI", keyword_list,
-                                    &convert_name_param, &name, &flags,
-                                    &(self->mode), &initial_value))
-        goto error_return;
-
-
-    if ( !(flags & O_CREAT) && (flags & O_EXCL) ) {
-        PyErr_SetString(PyExc_ValueError,
-                "O_EXCL must be combined with O_CREAT");
-        goto error_return;
-    }
-
-    if (name.is_none && ((flags & O_EXCL) != O_EXCL)) {
-        PyErr_SetString(PyExc_ValueError,
-                "Name can only be None if O_EXCL is set");
-        goto error_return;
-    }
-
-    if (name.is_none) {
-        // (name == None) ==> generate a name for the caller
-        do {
-            errno = 0;
-            create_random_name(temp_name);
-
-            DPRINTF("Calling sem_open, name=%s, flags=0x%x, mode=0%o, initial value=%d\n",
-                    temp_name, flags, (int)self->mode, initial_value);
-            self->pSemaphore = sem_open(temp_name, flags, (mode_t)self->mode,
-                                        initial_value);
-
-        } while ( (SEM_FAILED == self->pSemaphore) && (EEXIST == errno) );
-
-        // PyMalloc memory and copy the randomly-generated name to it.
-        self->name = (char *)PyMem_Malloc(strlen(temp_name) + 1);
-        if (self->name)
-            strcpy(self->name, temp_name);
-        else {
-            PyErr_SetString(PyExc_MemoryError, "Out of memory");
-            goto error_return;
-        }
-    }
-    else {
-        // (name != None) ==> use name supplied by the caller. It was
-        // already converted to C by convert_name_param().
-        self->name = name.name;
-
-        DPRINTF("Calling sem_open, name=%s, flags=0x%x, mode=0%o, initial value=%d\n",
-                self->name, flags, (int)self->mode, initial_value);
-        self->pSemaphore = sem_open(self->name, flags, (mode_t)self->mode,
-                                    initial_value);
-    }
-
-    DPRINTF("pSemaphore == %p\n", self->pSemaphore);
-
-    if (self->pSemaphore == SEM_FAILED) {
-        switch (errno) {
-            case EACCES:
-                PyErr_SetString(pPermissionsException,
-                                "Permission denied");
-            break;
-
-            case EEXIST:
-                PyErr_SetString(pExistentialException,
-                    "A semaphore with the specified name already exists");
-            break;
-
-            case ENOENT:
-                PyErr_SetString(pExistentialException,
-                    "No semaphore exists with the specified name");
-            break;
-
-            case EINVAL:
-                PyErr_SetString(PyExc_ValueError, "Invalid parameter(s)");
-            break;
-
-            case EMFILE:
-                PyErr_SetString(PyExc_OSError,
-                    "This process already has the maximum number of files open");
-            break;
-
-            case ENFILE:
-                PyErr_SetString(PyExc_OSError,
-                    "The system limit on the total number of open files has been reached");
-            break;
-
-            case ENAMETOOLONG:
-                PyErr_SetString(PyExc_ValueError, "The name is too long");
-            break;
-
-            case ENOMEM:
-                PyErr_SetString(PyExc_MemoryError, "Not enough memory");
-            break;
-
-            default:
-                PyErr_SetFromErrno(PyExc_OSError);
-            break;
-        }
-
-        goto error_return;
-    }
-    // else
-        // all is well, nothing to do
-
-    return 0;
-
-    error_return:
-    return -1;
-}
-
-
-static PyObject *
-Semaphore_release(Semaphore *self) {
-    if (!test_semaphore_validity(self))
-        goto error_return;
-
-    if (-1 == sem_post(self->pSemaphore)) {
-        switch (errno) {
-            case EINVAL:
-            case EBADF:
-                PyErr_SetString(pExistentialException,
-                                "The semaphore does not exist");
-            break;
-
-            default:
-                PyErr_SetFromErrno(PyExc_OSError);
-            break;
-        }
-        goto error_return;
-    }
-
-    Py_RETURN_NONE;
-
-    error_return:
-    return NULL;
-}
-
-
-// static PyObject *
-// my_shm_unlink(const char *name) {
-//     DPRINTF("unlinking shm name %s\n", name);
-//     if (-1 == shm_unlink(name)) {
-//         switch (errno) {
-//             case EACCES:
-//                 PyErr_SetString(pPermissionsException, "Permission denied");
-//             break;
-
-//             case ENOENT:
-//                 PyErr_SetString(pExistentialException,
-//                     "No shared memory exists with the specified name");
-//             break;
-
-//             case ENAMETOOLONG:
-//                 PyErr_SetString(PyExc_ValueError, "The name is too long");
-//             break;
-
-//             default:
-//                 PyErr_SetFromErrno(PyExc_OSError);
-//             break;
-//         }
-
-//         goto error_return;
-//     }
-
-//     Py_RETURN_NONE;
-
-//     error_return:
-//     return NULL;
-// }
-
-
-
-
-
-
-
-/*   =====  End Shared Memory functions =====           */
 
 
 /*   =====  Begin Message Queue implementation functions ===== */
@@ -1721,26 +1425,7 @@ static PyTypeObject MessageQueueType = {
  *
  */
 
-static PyObject *
-posix_ipc_unlink_semaphore(PyObject *self, PyObject *args) {
-    const char *name;
 
-    if (!PyArg_ParseTuple(args, "s", &name))
-        return NULL;
-    else
-        return my_sem_unlink(name);
-}
-
-
-static PyObject *
-posix_ipc_unlink_shared_memory(PyObject *self, PyObject *args) {
-    const char *name;
-
-    if (!PyArg_ParseTuple(args, "s", &name))
-        return NULL;
-    else
-        return my_shm_unlink(name);
-}
 
 
 #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
@@ -1757,16 +1442,6 @@ posix_ipc_unlink_message_queue(PyObject *self, PyObject *args) {
 
 
 static PyMethodDef module_methods[ ] = {
-    {   "unlink_semaphore",
-        (PyCFunction)posix_ipc_unlink_semaphore,
-        METH_VARARGS,
-        "Unlink a semaphore"
-    },
-    {   "unlink_shared_memory",
-        (PyCFunction)posix_ipc_unlink_shared_memory,
-        METH_VARARGS,
-        "Unlink shared memory"
-    },
 #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
     {   "unlink_message_queue",
         (PyCFunction)posix_ipc_unlink_message_queue,
@@ -1866,23 +1541,6 @@ POSIX_IPC_INIT_FUNCTION_NAME(void) {
 
     PyModule_AddIntConstant(module, "PAGE_SIZE", PAGE_SIZE);
 
-    PyModule_AddIntConstant(module, "SEMAPHORE_VALUE_MAX", SEM_VALUE_MAX);
-
-#ifdef SEM_TIMEDWAIT_EXISTS
-    Py_INCREF(Py_True);
-    PyModule_AddObject(module, "SEMAPHORE_TIMEOUT_SUPPORTED", Py_True);
-#else
-    Py_INCREF(Py_False);
-    PyModule_AddObject(module, "SEMAPHORE_TIMEOUT_SUPPORTED", Py_False);
-#endif
-
-#ifdef SEM_GETVALUE_EXISTS
-    Py_INCREF(Py_True);
-    PyModule_AddObject(module, "SEMAPHORE_VALUE_SUPPORTED", Py_True);
-#else
-    Py_INCREF(Py_False);
-    PyModule_AddObject(module, "SEMAPHORE_VALUE_SUPPORTED", Py_False);
-#endif
 
     if (!(module_dict = PyModule_GetDict(module)))
         goto error_return;
