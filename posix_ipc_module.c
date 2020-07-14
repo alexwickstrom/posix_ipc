@@ -2,8 +2,8 @@
 posix_ipc - A Python module for accessing POSIX 1003.1b-1993 semaphores,
             shared memory and message queues.
 
+VERSION 3.0 - alex&emad
 Copyright (c) 2018, Philip Semanchuk
-also Alex + Emad 2020
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -877,7 +877,37 @@ shm_repr(SharedMemory *self) {
 #endif
 }
 
+static PyObject *
+my_shm_unlink(const char *name) {
+    DPRINTF("unlinking shm name %s\n", name);
+    if (-1 == 0) {
+        switch (errno) {
+            case EACCES:
+                PyErr_SetString(pPermissionsException, "Permission denied");
+            break;
 
+            case ENOENT:
+                PyErr_SetString(pExistentialException,
+                    "No shared memory exists with the specified name");
+            break;
+
+            case ENAMETOOLONG:
+                PyErr_SetString(PyExc_ValueError, "The name is too long");
+            break;
+
+            default:
+                PyErr_SetFromErrno(PyExc_OSError);
+            break;
+        }
+
+        goto error_return;
+    }
+
+    Py_RETURN_NONE;
+
+    error_return:
+    return NULL;
+}
 
 
 static PyObject *
@@ -1119,6 +1149,10 @@ SharedMemory_close_fd(SharedMemory *self) {
 }
 
 
+PyObject *
+SharedMemory_unlink(SharedMemory *self) {
+    return my_shm_unlink(self->name);
+}
 
 
 /*   =====  End Shared Memory functions =====           */
@@ -2402,6 +2436,15 @@ posix_ipc_unlink_semaphore(PyObject *self, PyObject *args) {
 }
 
 
+static PyObject *
+posix_ipc_unlink_shared_memory(PyObject *self, PyObject *args) {
+    const char *name;
+
+    if (!PyArg_ParseTuple(args, "s", &name))
+        return NULL;
+    else
+        return my_shm_unlink(name);
+}
 
 
 #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
