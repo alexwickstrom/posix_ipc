@@ -32,6 +32,16 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define PY_SSIZE_T_CLEAN
 #define MESSAGE_QUEUES_SUPPORTED 1
 
+#ifdef shm_unlink
+#undef shm_unlink
+#endif
+#define shm_unlink
+
+#ifdef shm_open
+#undef shm_open
+#endif
+#define shm_open
+
 #include <Python.h>
 #include "structmember.h"
 
