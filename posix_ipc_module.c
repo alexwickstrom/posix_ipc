@@ -961,7 +961,7 @@ SharedMemory_init(SharedMemory *self, PyObject *args, PyObject *keywords) {
 
             DPRINTF("calling shm_open, name=%s, flags=0x%x, mode=0%o\n",
                         temp_name, flags, (int)self->mode);
-            self->fd = shm_open(temp_name, flags, (mode_t)self->mode);
+            # self->fd = s_hm_open(temp_name, flags, (mode_t)self->mode);
 
         } while ( (-1 == self->fd) && (EEXIST == errno) );
 
@@ -981,7 +981,7 @@ SharedMemory_init(SharedMemory *self, PyObject *args, PyObject *keywords) {
 
         DPRINTF("calling shm_open, name=%s, flags=0x%x, mode=0%o\n",
                     self->name, flags, (int)self->mode);
-        self->fd = shm_open(self->name, flags, (mode_t)self->mode);
+        # self->fd = s_hm_open(self->name, flags, (mode_t)self->mode);
     }
 
     DPRINTF("shm fd = %d\n", self->fd);
