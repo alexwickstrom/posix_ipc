@@ -31,17 +31,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define PY_SSIZE_T_CLEAN
 #define MESSAGE_QUEUES_SUPPORT_EXISTS 1
-// undefine / redefine shm_functions
-#ifdef shm_unlink
-#undef shm_unlink
-#endif
-#define shm_unlink
 
-#ifdef shm_open
-#undef shm_open
-#endif
-#define shm_open
-////////////////
 
 #include <Python.h>
 #include "structmember.h"
@@ -68,10 +58,25 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <sys/mman.h>
 
+
+
+
 #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
 // For msg queues
 #include <mqueue.h>
 #endif
+
+// undefine / redefine shm_functions
+#ifdef shm_unlink
+#undef shm_unlink
+#endif
+#define shm_unlink
+
+#ifdef shm_open
+#undef shm_open
+#endif
+#define shm_open
+////////////////
 
 /* POSIX says that a mode_t "shall be an integer type". To avoid the need
 for a specific get_mode function for each type, I'll just stuff the mode into
