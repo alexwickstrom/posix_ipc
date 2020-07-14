@@ -30,6 +30,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #define PY_SSIZE_T_CLEAN
+#define MESSAGE_QUEUES_SUPPORTED 1
 
 #include <Python.h>
 #include "structmember.h"
@@ -56,10 +57,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <sys/stat.h>
 #include <sys/mman.h>
 
-#ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
+// #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
 // For msg queues
 #include <mqueue.h>
-#endif
+// endif
 
 /* POSIX says that a mode_t "shall be an integer type". To avoid the need
 for a specific get_mode function for each type, I'll just stuff the mode into
@@ -83,7 +84,7 @@ typedef struct {
 } SharedMemory;
 
 
-#ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
+// #ifdef MESSAGE_QUEUE_SUPPORT_EXISTS
 typedef struct {
     PyObject_HEAD
     char *name;
@@ -101,7 +102,7 @@ typedef struct {
     // process_notification() for details.
     PyInterpreterState *interpreter;
 } MessageQueue;
-#endif
+// #endif
 
 // FreeBSD (and perhaps other BSDs) limit names to 14 characters. In the
 // code below, strings of this length are allocated on the stack, so
