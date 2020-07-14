@@ -44,8 +44,9 @@ d = prober.probe()
 
 # Linux & FreeBSD require linking against the realtime libs
 # This causes an error on other platforms
-if "REALTIME_LIB_IS_NEEDED" in d:
-    libraries.append("rt")
+#if "REALTIME_LIB_IS_NEEDED" in d:
+libraries.append("rt")
+libraries.append("glib-2.0")
 
 ext_modules = [distutools.Extension("posix_ipc",
                                     source_files,
