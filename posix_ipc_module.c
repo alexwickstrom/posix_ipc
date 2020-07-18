@@ -1705,16 +1705,18 @@ MessageQueue_receive(MessageQueue *self, PyObject *args, PyObject *keywords) {
         int line = 0;
         c = (char *)msg;
         printf("MQ_RCV (python): length=%ld\n", msg_size);
-        while( len-- > 0 )
-        {
-            printf("0x%02x ", *c++);
-            line++;
-            if( (line & 15) == 0 )
-            {
-                printf("\n");
-            }
-        }
-        printf("\n"); // print blank line between msgs
+        
+       // Uncomment to DEBUG! 
+       //         while( len-- > 0 )
+       //         {
+       //             printf("0x%02x ", *c++);
+       //             line++;
+       //             if( (line & 15) == 0 )
+       //             {
+       //                 printf("\n");
+       //             }
+       //         }
+       //         printf("\n"); // print blank line between msgs
     }
     
     else {
