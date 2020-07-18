@@ -1668,7 +1668,7 @@ MessageQueue_receive(MessageQueue *self, PyObject *args, PyObject *keywords) {
     NoneableTimeout timeout;
     char *msg = NULL;
     unsigned int priority = 0;
-    ssize_t size = 0;
+    ssize_t msg_size = 0;
     PyObject *py_return_tuple = NULL;
     static char *keyword_list[ ] = {"timeout", NULL};
 
@@ -1697,8 +1697,26 @@ MessageQueue_receive(MessageQueue *self, PyObject *args, PyObject *keywords) {
     if (timeout.is_none) {
         DPRINTF("Calling mq_receive(), mqd=%ld; msg buffer length = %ld\n",
                 (long)self->mqd, self->max_message_size);
-        size = mq_receive(self->mqd, msg, self->max_message_size, &priority);
+        msg_size = mq_receive(self->mqd, msg, self->max_message_size, &priority);
+        
+        // print out the bytes from the new message
+        unsigned char *c;
+        ssize_t len = msg_size;
+        int line = 0;
+        c = (char *)msg;
+        printf("MQ_RCV (python): length=%ld\n", msg_size);
+        while( len-- > 0 )
+        {
+            printf("0x%02x ", *c++);
+            line++;
+            if( (line & 15) == 0 )
+            {
+                printf("\n");
+            }
+        }
+        printf("\n"); // print blank line between msgs
     }
+    
     else {
         // Timeout is not None (i.e. is numeric)
         DPRINTF("Calling mq_timedreceive(), mqd=%ld; msg buffer length = %ld\n",
